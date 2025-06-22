@@ -1,0 +1,43 @@
+name: Daily YouTube Video Uploader
+
+on:
+  schedule:
+    # Schedule: Har din 5:00 PM IST par (jo ki 11:30 AM UTC hota hai)
+    - cron: '30 11 * * *' 
+  
+  workflow_dispatch: # Ye aapko GitHub UI se manually workflow run karne ki permission deta hai
+
+jobs:
+  upload-video:
+    runs-on: ubuntu-latest # Linux virtual machine par chalega
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # Aapki repository files ko runner par clone karta hai
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x' # Python 3 ka latest version use karein
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # google-auth is needed for the Credentials constructor, requests for downloading files
+        pip install cloudinary google-api-python-client google-auth-oauthlib google-auth-httplib2 requests google-auth
+
+    - name: Create client_secret.json from Secret
+      env:
+        GOOGLE_CLIENT_SECRETS_CONTENT: ${{ secrets.GOOGLE_CLIENT_SECRETS }}
+      run: |
+        echo "$GOOGLE_CLIENT_SECRETS_CONTENT" > client_secret.json
+        ls -l client_secret.json 
+
+    - name: Run YouTube Uploader Script
+      env:
+        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }} # Yahan aapka refresh token use hoga
+      run: |
+        python youtube_uploader.py
