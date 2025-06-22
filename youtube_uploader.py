@@ -174,7 +174,7 @@ def upload_video_to_youtube(youtube_service, video_file_path, title, description
             "categoryId": "22" # Video category ID (e.g., 22 for People & Blogs)
         },
         "status": {
-            "privacyStatus": "public" # public, private, ya unlisted
+            "privacyStatus": "private" # public, private, ya unlisted
         }
     }
 
