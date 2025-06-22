@@ -222,7 +222,7 @@ def main():
         print("Fetching background music from Cloudinary 'backmusic' folder...")
         music_results = cloudinary.api.resources(
             type='upload',
-            resource_type='raw', # Music files are often 'raw' type in Cloudinary, or 'video' if they were uploaded as videos
+            resource_type='video', # Music files are often 'raw' type in Cloudinary, or 'video' if they were uploaded as videos
             prefix='backmusic/',
             max_results=1 # Assuming only one music file or pick the first one
         )
