@@ -10,7 +10,7 @@ import os
 import pickle
 import requests
 import json
-import subprocess # FFmpeg ko run karne ke liye
+import subprocess
 
 # --- Cloudinary Configuration (Using GitHub Secrets) ---
 cloudinary.config(
@@ -35,7 +35,6 @@ def get_authenticated_service():
     """
     credentials = None
     
-    # Koshish karein ki token.pickle se credentials load ho jayein
     if os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'rb') as token:
@@ -43,14 +42,12 @@ def get_authenticated_service():
             print(f"Credentials loaded from {TOKEN_FILE}.")
         except Exception as e:
             print(f"Error loading token.pickle: {e}. Attempting new authorization.")
-            # Corrupt file ho sakti hai, delete karein
             try:
                 os.remove(TOKEN_FILE) 
             except OSError:
-                pass # Ignore if file doesn't exist already
+                pass 
             credentials = None
 
-    # Agar credentials nahi hain ya invalid hain
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             print("Access token expired, attempting to refresh with stored refresh token...")
@@ -59,13 +56,11 @@ def get_authenticated_service():
                 print("Access token refreshed successfully.")
             except Exception as e:
                 print(f"Error refreshing token: {e}. Full re-authentication needed.")
-                credentials = None # Refresh fail hone par naya auth flow
+                credentials = None
         
-        # Agar credentials abhi bhi nahi hain (ya refresh fail ho gaya)
         if not credentials:
             print("No valid credentials found or refresh token failed. Initiating authorization flow from secret...")
             
-            # GOOGLE_REFRESH_TOKEN secret se refresh token use karein
             refresh_token_secret = os.environ.get("GOOGLE_REFRESH_TOKEN")
             if not refresh_token_secret:
                 raise ValueError("GOOGLE_REFRESH_TOKEN GitHub Secret is missing or empty.")
@@ -79,7 +74,7 @@ def get_authenticated_service():
                     raise ValueError("client_secret.json must contain 'web' or 'installed' client configuration.")
 
                 credentials = google.oauth2.credentials.Credentials(
-                    token=None,  # Abhi koi access token nahi hai
+                    token=None,
                     refresh_token=refresh_token_secret,
                     token_uri=web_config.get("token_uri"),
                     client_id=web_config.get("client_id"),
@@ -87,16 +82,14 @@ def get_authenticated_service():
                     scopes=SCOPES
                 )
                 
-                # Turant ek valid access token prapt karne ke liye refresh karein
                 credentials.refresh(Request())
                 print("Initial credentials created and refreshed using GOOGLE_REFRESH_TOKEN secret.")
 
             except Exception as e:
                 print(f"FATAL: Could not establish credentials using GOOGLE_REFRESH_TOKEN secret: {e}")
                 print("Please ensure GOOGLE_REFRESH_TOKEN and GOOGLE_CLIENT_SECRETS are correctly set in GitHub Secrets.")
-                raise # Error hone par workflow ko fail karein
+                raise
                 
-    # Credentials ko save karein future ke runs ke liye
     with open(TOKEN_FILE, 'wb') as token:
         pickle.dump(credentials, token)
     print(f"Credentials saved/updated to {TOKEN_FILE}.")
@@ -121,14 +114,6 @@ def merge_video_audio_ffmpeg(video_input_path, audio_input_path, output_path):
     """
     print(f"Merging video: {video_input_path} with audio: {audio_input_path} into {output_path}...")
     
-    # FFmpeg command:
-    # -i video_input_path: Input video
-    # -i audio_input_path: Input audio
-    # -map 0:v: Map only video stream from first input (input 0)
-    # -map 1:a: Map only audio stream from second input (input 1)
-    # -c:v copy: Copy video stream without re-encoding (fast and no quality loss)
-    # -shortest: Output duration is determined by the shortest input stream (video or audio)
-    # -y: Overwrite output file if it exists
     ffmpeg_command = [
         "ffmpeg",
         "-i", video_input_path,
@@ -137,12 +122,11 @@ def merge_video_audio_ffmpeg(video_input_path, audio_input_path, output_path):
         "-map", "1:a",
         "-c:v", "copy",
         "-shortest",
-        "-y", # Overwrite output file if it exists
+        "-y",
         output_path
     ]
 
     try:
-        # Run FFmpeg command
         result = subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
         print("FFmpeg stdout:")
         print(result.stdout)
@@ -171,10 +155,10 @@ def upload_video_to_youtube(youtube_service, video_file_path, title, description
             "title": title,
             "description": description,
             "tags": tags,
-            "categoryId": "22" # Video category ID (e.g., 22 for People & Blogs)
+            "categoryId": "22"
         },
         "status": {
-            "privacyStatus": "private" # public, private, ya unlisted
+            "privacyStatus": "public"
         }
     }
 
@@ -186,16 +170,17 @@ def upload_video_to_youtube(youtube_service, video_file_path, title, description
     )
     response = insert_request.execute()
     print(f"Video successfully uploaded! Video ID: {response.get('id')}")
-    print(f"YouTube URL: https://www.youtube.com/watch?v={response.get('id')}") # Corrected YouTube URL
-    return response.get('id') # Return YouTube video ID
+    print(f"YouTube URL: https://www.youtube.com/watch?v={response.get('id')}")
+    return response.get('id')
 
 def main():
     """
-    Main function jo Cloudinary se video fetch karke YouTube par upload karti hai.
+    Main function jo Cloudinary se video aur music fetch karke merge karta hai,
+    aur phir merged video ko YouTube par upload karta hai.
     """
     # Define temporary file paths
     temp_video_path = "temp_video.mp4"
-    temp_music_path = "temp_music.mp3"
+    temp_music_path = "temp_music.mp3" # Keep .mp3 extension for music
     merged_output_path = "merged_output.mp4"
 
     try:
@@ -218,29 +203,17 @@ def main():
         video_public_id = random_video.get('public_id')
         print(f"Selected random video: {video_public_id}, URL: {video_url}")
 
-        # --- 2. Cloudinary se background music fetch karein ('backmusic' folder se) ---
-        print("Fetching background music from Cloudinary 'backmusic' folder...")
-        music_results = cloudinary.api.resources(
-            type='upload',
-            resource_type='video', # Music files are often 'raw' type in Cloudinary, or 'video' if they were uploaded as videos
-            prefix='backmusic/',
-            max_results=1 # Assuming only one music file or pick the first one
-        )
-        music_files = music_results.get('resources', [])
-
-        if not music_files:
-            print("No background music found in Cloudinary 'backmusic' folder. Cannot proceed.")
-            return
-        
-        background_music = music_files[0] # First music file ko select karein
-        music_url = background_music.get('secure_url')
-        music_public_id = background_music.get('public_id')
-        print(f"Selected background music: {music_public_id}, URL: {music_url}")
-
+        # --- 2. Direct Background Music URL ka upyog karein ---
+        # Aapne jo link diya hai use yahan hardcode kar dein.
+        music_url = "https://res.cloudinary.com/decqrz2gm/video/upload/v1750532138/backmusic/Control_isn_t_....mp3"
+        # Music ka public ID is URL se nikal sakte hain agar description mein use karna hai.
+        # Ya aap ise manually bhi define kar sakte hain agar yeh fixed hai.
+        music_public_id = "backmusic/Control_isn_t_...." # Example public_id for description if needed
+        print(f"Using fixed background music URL: {music_url}")
 
         # --- 3. Video aur Music Files Download Karein ---
         download_file(video_url, temp_video_path)
-        download_file(music_url, temp_music_path)
+        download_file(music_url, temp_music_path) # Music file ko .mp3 extension ke saath download karein
         
         # --- 4. Video aur Audio ko Merge Karein (FFmpeg ka upyog karke) ---
         merged_video_path = merge_video_audio_ffmpeg(temp_video_path, temp_music_path, merged_output_path)
@@ -266,10 +239,9 @@ def main():
             "Remember, every challenge is an opportunity in disguise. Believe in yourself, stay consistent, and never stop chasing your dreams.\n\n"
             "If you found this video inspiring, please like, share, and subscribe for more motivational content!\n\n"
             "--- Music & Copyright --- \n"
-            f"🎵 Background Music: {music_public_id.split('/')[-1].split('.')[0].replace('_', ' ').title()} by [**Artist Name of Background Music**]\n" # Music title dynamic
+            "🎵 Background Music: Control isn't... by [**Artist Name of Background Music**]\n" # Fixed music title from URL
             "🎶 Music License: [**If applicable, include license details or link**]\n"
-            "I do not claim ownership of the background music used in this video. All rights belong to their respective owners. "
-            "This video is for motivational and entertainment purposes only.\n\n"
+            "I do not claim ownership of the background music used in this video. This video is for motivational and entertainment purposes only.\n\n"
             "--- Connect With Us --- \n"
             "[Your Website/Social Media Links Here, e.g., Instagram: @YourChannelName]\n\n"
             "--- Searching Tags --- \n"
@@ -295,7 +267,7 @@ def main():
 
     except Exception as e:
         print(f"Ek error aa gaya: {e}")
-        raise # Error hone par GitHub Action job ko fail karein
+        raise
     finally:
         # --- 8. Temporary files ko delete karein (cleanup) ---
         for f_path in [temp_video_path, temp_music_path, merged_output_path]:
