@@ -21,7 +21,9 @@ cloudinary.config(
 )
 
 # --- YouTube API Configuration ---
+# GitHub Actions par client_secret.json file ko dynamically banayenge
 CLIENT_SECRETS_FILE = "client_secret.json"
+# token.pickle file GitHub Actions runner par banegi/use hogi
 TOKEN_FILE = 'token.pickle'
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
@@ -35,6 +37,7 @@ def get_authenticated_service():
     """
     credentials = None
     
+    # Koshish karein ki token.pickle se credentials load ho jayein
     if os.path.exists(TOKEN_FILE):
         try:
             with open(TOKEN_FILE, 'rb') as token:
@@ -42,12 +45,14 @@ def get_authenticated_service():
             print(f"Credentials loaded from {TOKEN_FILE}.")
         except Exception as e:
             print(f"Error loading token.pickle: {e}. Attempting new authorization.")
+            # Corrupt file ho sakti hai, delete karein
             try:
                 os.remove(TOKEN_FILE) 
-            except OSError:
+            except OSError: # Handle case where file might not exist after all
                 pass 
             credentials = None
 
+    # Agar credentials nahi hain ya invalid hain
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             print("Access token expired, attempting to refresh with stored refresh token...")
@@ -56,11 +61,13 @@ def get_authenticated_service():
                 print("Access token refreshed successfully.")
             except Exception as e:
                 print(f"Error refreshing token: {e}. Full re-authentication needed.")
-                credentials = None
+                credentials = None # Refresh fail hone par naya auth flow
         
+        # Agar credentials abhi bhi nahi hain (ya refresh fail ho gaya)
         if not credentials:
             print("No valid credentials found or refresh token failed. Initiating authorization flow from secret...")
             
+            # GOOGLE_REFRESH_TOKEN secret se refresh token use karein
             refresh_token_secret = os.environ.get("GOOGLE_REFRESH_TOKEN")
             if not refresh_token_secret:
                 raise ValueError("GOOGLE_REFRESH_TOKEN GitHub Secret is missing or empty.")
@@ -74,7 +81,7 @@ def get_authenticated_service():
                     raise ValueError("client_secret.json must contain 'web' or 'installed' client configuration.")
 
                 credentials = google.oauth2.credentials.Credentials(
-                    token=None,
+                    token=None,  # Abhi koi access token nahi hai
                     refresh_token=refresh_token_secret,
                     token_uri=web_config.get("token_uri"),
                     client_id=web_config.get("client_id"),
@@ -82,14 +89,16 @@ def get_authenticated_service():
                     scopes=SCOPES
                 )
                 
+                # Turant ek valid access token prapt karne ke liye refresh karein
                 credentials.refresh(Request())
                 print("Initial credentials created and refreshed using GOOGLE_REFRESH_TOKEN secret.")
 
             except Exception as e:
                 print(f"FATAL: Could not establish credentials using GOOGLE_REFRESH_TOKEN secret: {e}")
                 print("Please ensure GOOGLE_REFRESH_TOKEN and GOOGLE_CLIENT_SECRETS are correctly set in GitHub Secrets.")
-                raise
+                raise # Error hone par workflow ko fail karein
                 
+    # Credentials ko save karein future ke runs ke liye
     with open(TOKEN_FILE, 'wb') as token:
         pickle.dump(credentials, token)
     print(f"Credentials saved/updated to {TOKEN_FILE}.")
@@ -101,7 +110,7 @@ def download_file(url, local_path):
     """Downloads a file from a URL to a local path."""
     print(f"Downloading {url} to {local_path}...")
     with requests.get(url, stream=True) as r:
-        r.raise_for_status()
+        r.raise_for_status() # HTTP errors (4xx, 5xx) ko handle karein
         with open(local_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
@@ -114,6 +123,14 @@ def merge_video_audio_ffmpeg(video_input_path, audio_input_path, output_path):
     """
     print(f"Merging video: {video_input_path} with audio: {audio_input_path} into {output_path}...")
     
+    # FFmpeg command:
+    # -i video_input_path: Input video
+    # -i audio_input_path: Input audio
+    # -map 0:v: Map only video stream from first input (input 0)
+    # -map 1:a: Map only audio stream from second input (input 1)
+    # -c:v copy: Copy video stream without re-encoding (fast and no quality loss)
+    # -shortest: Output duration is determined by the shortest input stream (video or audio)
+    # -y: Overwrite output file if it exists
     ffmpeg_command = [
         "ffmpeg",
         "-i", video_input_path,
@@ -122,11 +139,12 @@ def merge_video_audio_ffmpeg(video_input_path, audio_input_path, output_path):
         "-map", "1:a",
         "-c:v", "copy",
         "-shortest",
-        "-y",
+        "-y", # Overwrite output file if it exists
         output_path
     ]
 
     try:
+        # Run FFmpeg command
         result = subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
         print("FFmpeg stdout:")
         print(result.stdout)
@@ -155,10 +173,10 @@ def upload_video_to_youtube(youtube_service, video_file_path, title, description
             "title": title,
             "description": description,
             "tags": tags,
-            "categoryId": "22"
+            "categoryId": "22" # Video category ID (e.g., 22 for People & Blogs)
         },
         "status": {
-            "privacyStatus": "public"
+            "privacyStatus": "public" # public, private, ya unlisted
         }
     }
 
@@ -171,7 +189,7 @@ def upload_video_to_youtube(youtube_service, video_file_path, title, description
     response = insert_request.execute()
     print(f"Video successfully uploaded! Video ID: {response.get('id')}")
     print(f"YouTube URL: https://www.youtube.com/watch?v={response.get('id')}")
-    return response.get('id')
+    return response.get('id') # Return YouTube video ID
 
 def main():
     """
@@ -183,7 +201,14 @@ def main():
     temp_music_path = "temp_music.mp3" # Keep .mp3 extension for music
     merged_output_path = "merged_output.mp4"
 
+    # Initialize youtube_service outside the main try block
+    youtube_service = None 
+
     try:
+        # --- Authentication Service ko Yahan Call Karein ---
+        # Isse youtube_service har haal mein define ho jayega agar authentication successful hai
+        youtube_service = get_authenticated_service() 
+
         # --- 1. Cloudinary se random video fetch karein ('Quotes_Videos' folder se, jo upload nahi hui ho) ---
         print("Searching for un-uploaded videos in Cloudinary 'Quotes_Videos' folder...")
         search_results = cloudinary.Search()\
@@ -213,7 +238,7 @@ def main():
 
         # --- 3. Video aur Music Files Download Karein ---
         download_file(video_url, temp_video_path)
-        download_file(music_url, temp_music_path) # Music file ko .mp3 extension ke saath download karein
+        download_file(music_url, temp_music_path) 
         
         # --- 4. Video aur Audio ko Merge Karein (FFmpeg ka upyog karke) ---
         merged_video_path = merge_video_audio_ffmpeg(temp_video_path, temp_music_path, merged_output_path)
@@ -267,7 +292,7 @@ def main():
 
     except Exception as e:
         print(f"Ek error aa gaya: {e}")
-        raise
+        raise # Error hone par GitHub Action job ko fail karein
     finally:
         # --- 8. Temporary files ko delete karein (cleanup) ---
         for f_path in [temp_video_path, temp_music_path, merged_output_path]:
