@@ -263,12 +263,10 @@ def main():
             "Welcome to our channel! This video is designed to ignite your inner fire and keep you motivated on your journey to success. "
             "Remember, every challenge is an opportunity in disguise. Believe in yourself, stay consistent, and never stop chasing your dreams.\n\n"
             "If you found this video inspiring, please like, share, and subscribe for more motivational content!\n\n"
-            "--- Music & Copyright --- \n"
-            "🎵 Background Music: Control isn't... by [**Artist Name of Background Music**]\n" # Fixed music title from URL
-            "🎶 Music License: [**If applicable, include license details or link**]\n"
+            
+            "--- Music & Copyright --- \n"       
             "I do not claim ownership of the background music used in this video. This video is for motivational and entertainment purposes only.\n\n"
-            "--- Connect With Us --- \n"
-            "[Your Website/Social Media Links Here, e.g., Instagram: @YourChannelName]\n\n"
+       
             "--- Searching Tags --- \n"
             "#Motivation #Inspiration #Success #BelieveInYourself #NeverGiveUp #PositiveVibes #Mindset #GoalSetting #DreamBig #SelfImprovement #MotivationalVideo #LifeHacks #Productivity #StayStrong #AchieveGoals #DailyMotivation #FitnessMotivation #StudyMotivation #WorkMotivation #InspirationalQuotes #Focus"
         )
